@@ -685,6 +685,25 @@ proc createNodeLogIfcs { node } {
 
     set node_id "$eid.$node"
 
+    # Change init.d opts for zebra (didn't matter)
+    # pipesExec "docker exec -d $node_id sed -i 's/ZEBRA_OPTS=\"\-A 127.0.0.1/ZEBRA_OPTS=\"-P0/' /etc/default/quagga" "hold"
+    
+    # Tried to get ripd to log to file
+    pipesExec "docker exec -d $node_id touch /run/quagga/log" "hold"
+    pipesExec "docker exec -d $node_id chmod 777 /run/quagga/log" "hold"
+    pipesExec "docker exec -d $node_id sh -c 'echo \"log file /run/quagga/log informational\" >> /etc/quagga/ripd.conf'" "hold"
+
+    # We only have quagga but it tries to use frr
+    pipesExec "docker exec -d $node_id sh -c 'test -f /usr/local/bin/frrboot.sh || ln -s /usr/local/bin/quaggaboot.sh /usr/local/bin/frrboot.sh'" "hold"
+
+    # Activate daemons using init scripts instead of commands
+    # sleep after starting zebra to ensure that the other services have something to bind to
+    pipesExec "docker exec -d $node_id sed -i 's/zebra \-dP0/service zebra start \\&\\& sleep .2/' /usr/local/bin/quaggaboot.sh" "hold"
+    pipesExec "docker exec -d $node_id sed -i 's/\\\${f}d \-dP0/service \${f}d start/' /usr/local/bin/quaggaboot.sh" "hold"
+
+    # Allow daemons to start before using vtysh
+    pipesExec "docker exec -d $node_id sed -i 's/vtysh/sleep .3 \\&\\& vtysh/' /usr/local/bin/quaggaboot.sh" "hold"
+
     foreach ifc [logIfcList $node] {
 	switch -exact [getLogIfcType $node $ifc] {
 	    vlan {
@@ -692,9 +711,11 @@ proc createNodeLogIfcs { node } {
 		# must be created after links
 	    }
 	    lo {
-		if {$ifc != "lo0"} {
+		if { $ifc != "lo0" } {
 		    pipesExec "docker exec -d $node_id ip link add $ifc type dummy" "hold"
-		    pipesExec "docker exec -d $node_id ip link set $ifc up" "hold"
+		    pipesExec "docker exec -d $node_id ip link add $ifc up" "hold"
+		} else {
+		    pipesExec "docker exec -d $node_id sh -c 'ip link set dev lo down && ip link set dev lo name lo0 && ip a flush lo0'" "hold"
 		}
 	    }
 	}
@@ -781,12 +802,11 @@ proc createNsVethPair { ifname1 netNs1 ifname2 netNs2 } {
 	set nsstr2 "netns $netNs2"
 	set nsstr2x "-n $netNs2"
     }
-    pipesExec "ip link add name $eid-$ifname1 $nsstr1 type veth peer name $eid-$ifname2 $nsstr2" "hold"
-    pipesExec "ip $nsstr1x link set $eid-$ifname1 name $ifname1" "hold"
-    pipesExec "ip $nsstr2x link set $eid-$ifname2 name $ifname2" "hold"
+    pipesExec "ip link add name $eid-$ifname1 $nsstr1 type veth peer name $eid-$ifname2 $nsstr2 && ip $nsstr1x link set $eid-$ifname1 name $ifname1 && ip $nsstr2x link set $eid-$ifname2 name $ifname2 &" "hold"
 }
 
 proc setNsIfcMaster { netNs ifname master state } {
+    after 500
     set nsstr ""
     if { $netNs != "" } {
 	set nsstr "-n $netNs"
