@@ -802,7 +802,7 @@ proc createNsVethPair { ifname1 netNs1 ifname2 netNs2 } {
 	set nsstr2 "netns $netNs2"
 	set nsstr2x "-n $netNs2"
     }
-    pipesExec "ip link add name $eid-$ifname1 $nsstr1 type veth peer name $eid-$ifname2 $nsstr2 && ip $nsstr1x link set $eid-$ifname1 name $ifname1 && ip $nsstr2x link set $eid-$ifname2 name $ifname2 &" "hold"
+    pipesExec "ip link add name $eid-$ifname1 $nsstr1 type veth peer name $eid-$ifname2 $nsstr2 && ip $nsstr1x link set $eid-$ifname1 name $ifname1 && ip $nsstr2x link set $eid-$ifname2 name $ifname2" "hold"
 }
 
 proc setNsIfcMaster { netNs ifname master state } {
